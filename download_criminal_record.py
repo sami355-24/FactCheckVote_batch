@@ -52,6 +52,27 @@ async def main():
             json.dump(basic_info, f, ensure_ascii=False, indent=4)
         print(f"✅ 기본정보 JSON 저장 완료: {json_path}")
         
+        # --- 후보자 사진 다운로드 ---
+        photo_img = await page.query_selector('img[alt="예비후보자 사진"]')
+        if photo_img:
+            photo_src = await photo_img.get_attribute('src')
+            if photo_src:
+                # 상대 경로일 경우 도메인 추가
+                photo_url = f"https://info.nec.go.kr{photo_src}" if photo_src.startswith('/') else photo_src
+                print(f"1-6. 후보자 사진 다운로드 중...")
+                
+                photo_response = await page.request.get(photo_url)
+                if photo_response.ok:
+                    photo_bytes = await photo_response.body()
+                    photo_path = "./downloads/candidate_photo.jpg"
+                    with open(photo_path, "wb") as f:
+                        f.write(photo_bytes)
+                    print(f"✅ 후보자 사진 저장 완료: {photo_path}")
+                else:
+                    print(f"❌ 사진 다운로드 실패 (상태 코드: {photo_response.status})")
+        else:
+            print("❌ 후보자 사진 요소를 찾을 수 없습니다.")
+        
         # 2. '전과' 탭 렌더링 대기 및 클릭
         await page.wait_for_selector('text="전과"', timeout=15000)
         print("2. '전과' 탭 클릭")
