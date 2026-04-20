@@ -2,8 +2,19 @@ import asyncio
 import os
 import json
 from playwright.async_api import async_playwright
+import google.generativeai as genai
+import getpass
 
 async def main():
+    # 보안 강화를 위해 환경변수에서 우선적으로 키를 찾거나 실행 시 직접 입력받습니다.
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("\n💡 팁: OS 환경변수로 'GEMINI_API_KEY'를 등록해두면 매번 칠 필요가 없습니다.")
+        api_key = getpass.getpass("Gemini API 키를 입력해주세요 (보안을 위해 화면에 표시되지 않습니다): ")
+        if not api_key.strip():
+            print("❌ API 키가 입력되지 않아 스크립트를 종료합니다.")
+            return
+
     # Playwright를 이용해 브라우저 실행
     async with async_playwright() as p:
         # headless=True 옵션을 사용하면 백그라운드에서 실행되며 브라우저 창이 뜨지 않습니다.
@@ -79,6 +90,41 @@ async def main():
             # 다운로드 저장
             await download.save_as(save_path)
             print(f"6. ✅ 다운로드 완료! 저장 위치: {save_path}")
+            
+            print("7. Gemini 1.5 Flash API를 이용해 PDF 내용 파싱 중...")
+            try:
+                # 보안을 위해 입력받은 API 키로 설정
+                genai.configure(api_key=api_key)
+                
+                print("  - PDF 파일 업로드 중...")
+                # Gemini에 직접 파악 가능한 형태로 파일 업로드
+                sample_file = genai.upload_file(path=save_path, mime_type="application/pdf")
+                
+                # Gemini 1.5 Flash 모델 초기화
+                # 응답 형식을 JSON 구조로 완벽히 한정하기 위해 response_mime_type 설정
+                model = genai.GenerativeModel(
+                    model_name='gemini-flash-latest',
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                
+                print("  - 데이터 추출 및 JSON 구조화 요청 중...")
+                prompt = "첨부된 문서에서 감지되는 모든 항목과 주요 전과 기록 내용을 논리적인 Key-Value 쌍의 JSON 형식으로 완벽하게 파싱해서 추출해줘."
+                
+                response = model.generate_content([sample_file, prompt])
+                
+                # JSON 결과값 저장
+                gemini_json_path = "./downloads/gemini_results.json"
+                
+                # Gemini 응답은 텍스트지만 response_mime_type 지정으로 JSON 형식 문자열임. 
+                # 파싱해서 예쁘게(indent=4) 저장합니다.
+                parsed_json = json.loads(response.text)
+                with open(gemini_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(parsed_json, f, ensure_ascii=False, indent=4)
+                    
+                print(f"8. ✅ 문서 데이터 추출 완료! JSON 파일 저장 위치: {gemini_json_path}")
+                
+            except Exception as e:
+                print(f"❌ Gemini API 처리 중 오류가 발생했습니다: {e}")
             
         else:
             print("❌ 문서 뷰어 iframe을 찾을 수 없습니다. 페이지 구조를 다시 확인해주세요.")
